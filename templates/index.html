@@ -8,158 +8,141 @@
 
 <div id="map"></div>
 
-<div id="home">
-	<img src="\static\images\home-icon-silhouette-svgrepo-com.svg" alt="Home Button" 
-	style="
-	width: 3em;
-  	height: 3em;
-	filter: invert(1)
-	">
-</div>
-
 
 <div id="container">
 	<div>
-		<h1 id="title"><strong>Live Flight Tracker</strong></h1>
-		<br>
-		<p>This Web Application was built using Python, Javascript, Html5, & CSS3.  Python is used for the backend and serving the web pages through Flask.  It is also responsible for generating the API for the locations of all planes with info and updates.  The API is then called in via javascript and loaded onto the webpage on a MapboxGL map canvas.  Due to limitations of the plane data source, the planes are only able to update every 6 seconds.</p>
-		<br>
-		<p>The API being served is a .GeoJson, which is able to hold location-based information that is then read via Mapbox.  The coordinates set for each "feature" or in this case plane, is then split and used to loop over and place each plane.  The GeoJson file also contains additional information such as callsign, speed, height, degree as well as unused properties.</p>
-		<br>
-		<p>To rotate the planes based on their direction, the degree is used and set to rotate each marker to face the right direction.</p>
-		<br>
-		<p>Currently, updates including plane search, filter by airline, toggle between metric and imperial, and a few other interactive features are being developed, so be sure to check back!</p>
-		<br>
-		<p><a href="#">Click Here</a> for the GitHub Repo.</p>
+	  <h1 id="title"><strong>Live Flight Tracker</strong></h1>
+	  <br>
+	  <p>This app uses Python (Flask) for the backend and JavaScript with MapboxGL for the frontend. Plane data updates every 6 seconds.</p>
+	  <br>
+	  <p>Location data is served as a .GeoJson file, containing coordinates, callsign, speed, height, and direction.</p>
+	  <br>
+	  <p>Plane markers rotate based on their direction.</p>
+	  <br>
+	  <p>Upcoming features: plane search, airline filters, and metric/imperial toggles.</p>
+	  <br>
+	  <p><a href="#">Click Here</a> for the GitHub Repo.</p>
 	</div>
-  </div>
-
+</div>
 
 <script>
 
-	const layerIDs = [];
-	const filterInput = document.getElementById('filter-input');
-
-
-	mapboxgl.accessToken = "{{ mapbox_access_token }}"
-    const map = new mapboxgl.Map({
-    container: 'map',
-    style: 'mapbox://styles/mapbox/streets-v11?optimize',
-    center: [-75.242180,39.876362],
-    // projection: 'globe',
-    zoom: 7,
-    });
-
-	map.loadImage('/static/images/plane-icon.png', (error, image) => {
-	if (error) throw error;
-	if (!map.hasImage('plane')) map.addImage('plane', image);
+	mapboxgl.accessToken = "{{ mapbox_access_token }}";
+	const map = new mapboxgl.Map({
+		container: 'map',
+		style: 'mapbox://styles/mapbox/streets-v11?optimize',
+		center: [-75.242180,39.876362],
+		zoom: 7,
 	});
 
+	// Load both plane and shadow images
+	map.loadImage('/static/images/plane-icon.png', (error, planeImage) => {
+		if (error) throw error;
+		if (!map.hasImage('plane')) map.addImage('plane', planeImage);
+	});
 
-    map.on('load', async () => {
+	map.loadImage('/static/images/plane-shadow.png', (error, shadowImage) => {
+		if (error) throw error;
+		if (!map.hasImage('plane-shadow')) map.addImage('plane-shadow', shadowImage);
+	});
 
+	map.on('load', async () => {
 		const geojson = await getLocation();
-		
+
+		// Plane shadow layer (below plane)
 		map.addSource('planes', {
 			type: 'geojson',
 			data: geojson
 		});
 
+		map.addLayer({
+			'id': 'plane-shadow',
+			'type': 'symbol',
+			'source': 'planes',
+			'layout': {
+				'icon-image': 'plane-shadow',
+				'icon-size': 0.07,
+				'icon-rotate': ['get', 'degree'],
+				'icon-offset': [0, 5] // Slight downward offset for the shadow
+			},
+			'paint': {
+				'icon-opacity': 0.5 // Make shadow semi-transparent
+			}
+		});
 
-		
-			// Add the rocket symbol layer to the map.
+		// Plane marker layer (above shadow)
 		map.addLayer({
 			'id': 'planemarker',
 			'type': 'symbol',
 			'source': 'planes',
 			'layout': {
-				// This icon is a part of the Mapbox Streets style.
-				// To view all images available in a Mapbox style, open
-				// the style in Mapbox Studio and click the "Images" tab.
-				// To add a new image to the style at runtime see
-				// https://docs.mapbox.com/mapbox-gl-js/example/add-image/
 				'icon-image': 'plane',
-				'icon-size': .0625,
+				'icon-size': 0.0625,
 				'icon-rotate': ['get', 'degree']
 			}
 		});
 
-        // Update the source from the API every X seconds.
-        const updateSource = setInterval(async () => {
-            const geojson = await getLocation(updateSource);
-            map.getSource('planes').setData(geojson);
+		// Update the source from the API every X seconds.
+		const updateSource = setInterval(async () => {
+			const geojson = await getLocation(updateSource);
+			map.getSource('planes').setData(geojson);
+		}, 6000);
 
+		async function getLocation(updateSource) {
+			try {
+				const response = await fetch('/planes.geojson', { method: 'GET' });
+				console.log(response);
+				const planes = await response.json();
+				return planes;
+			} catch (err) {
+				if (updateSource) clearInterval(updateSource);
+				throw new Error(err);
+			}
+		}
 
-        }, 6000);
+		map.on('click', 'planemarker', (e) => {
+			const coordinates = e.features[0].geometry.coordinates.slice();
+			const title = e.features[0].properties.title;
+			const lat = e.features[0].properties.lat;
+			const long = e.features[0].properties.long;
+			const altitude = e.features[0].properties.altitude;
+			const velocity = e.features[0].properties.velocity;
 
-        async function getLocation(updateSource) {
-            // Make a GET request to the API and return the location of the planes.
-            try {
-                const response = await fetch(
-                    '/planes.geojson',
-                    { method: 'GET' }
-                );
-				console.log(response)
-                const planes = await response.json();
-                // Fly the map to the location.
-                // Return the location of the ISS as GeoJSON.
-                return planes
-            } catch (err) {
-                // If the updateSource interval is defined, clear the interval to stop updating the source.
-                if (updateSource) clearInterval(updateSource);
-                throw new Error(err);
-            }
-        }
+			while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+				coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+			}
 
-        map.on('click', 'planemarker', (e) => {
-          // Copy coordinates array.
-          const coordinates = e.features[0].geometry.coordinates.slice();
-          const title = e.features[0].properties.title;
-		  const lat = e.features[0].properties.lat;
-		  const long = e.features[0].properties.long;
-		  const altitude = e.features[0].properties.altitude;
-		  const vRate = e.features[0].properties.vRate;
-		  const velocity = e.features[0].properties.velocity;
-          
-          // Ensure that if the map is zoomed out such that multiple
-          // copies of the feature are visible, the popup appears
-          // over the copy being pointed to.
-          while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
-          coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
-          }
-          
-          new mapboxgl.Popup()
-          .setLngLat(coordinates)
-          .setHTML(
-			`<table>
-				<tbody>
-					<tr>
-						<td colspan="4" class="callsign"><strong>${title}</strong></td>
-					</tr>
-					<tr>
-						<td colspan="2" class="charttitle">Latitude:</td>
-						<td colspan="2">${lat}</td>
-						
-					</tr>
-					<tr>
-						<td colspan="2" class="charttitle">Longitude:</td>
-						<td colspan="2">${long}</td>
-					</tr>
-					<tr>
-						<td colspan="2" class="charttitle">Altitude:</td>
-						<td colspan="2">${altitude} meters</td>
-					</tr>
-					<tr>
-						<td colspan="2" class="charttitle">Velocity:</td>
-						<td colspan="2">${velocity} m/s</td>
-					</tr>
-				</tbody>
-			</table>`
-			)
-          .addTo(map);
-        });
+			new mapboxgl.Popup()
+				.setLngLat(coordinates)
+				.setHTML(
+					`<table>
+						<tbody>
+							<tr>
+								<td colspan="4" class="callsign"><strong>${title}</strong></td>
+							</tr>
+							<tr>
+								<td colspan="2" class="charttitle">Latitude:</td>
+								<td colspan="2">${lat}</td>
+							</tr>
+							<tr>
+								<td colspan="2" class="charttitle">Longitude:</td>
+								<td colspan="2">${long}</td>
+							</tr>
+							<tr>
+								<td colspan="2" class="charttitle">Altitude:</td>
+								<td colspan="2">${altitude} meters</td>
+							</tr>
+							<tr>
+								<td colspan="2" class="charttitle">Velocity:</td>
+								<td colspan="2">${velocity} m/s</td>
+							</tr>
+						</tbody>
+					</table>`
+				)
+				.addTo(map);
 		});
-	
-	</script>
-	
+	});
+
+</script>
+
 {% endblock %}

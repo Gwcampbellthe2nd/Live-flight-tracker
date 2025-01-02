@@ -1,4 +1,3 @@
-import imp
 from flask import Flask, render_template, request, url_for, redirect, send_from_directory
 from opensky.opensky_api import OpenSkyApi
 
@@ -15,6 +14,8 @@ app = Flask(__name__, static_url_path='/static')
 # https://opensky-network.org/api/states/all?
 
 
+USERNAME = 'CampbellG2'
+PASSWORD= '2uwfkhsa'
 
 
 @app.route('/',  methods=['GET', 'POST'])
@@ -36,7 +37,7 @@ def geojson():
     data = []
     features = []
     # api = OpenSkyApi()
-    api = OpenSkyApi()
+    api = OpenSkyApi(USERNAME, PASSWORD)
     states = api.get_states()
 
     
